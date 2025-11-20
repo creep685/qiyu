@@ -1,0 +1,1727 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>传感器监控</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js"></script>
+    <!-- 高德地图API -->
+    <script type="text/javascript" src="https://webapi.amap.com/maps?v=2.0&key=5674b9917349b0bc3f28f335ac8bdb7a"></script>
+    <!-- 高德地图安全密钥 -->
+    <script type="text/javascript">
+        window._AMapSecurityConfig = {
+            securityJsCode: '1f3abb4f23dbb91156874f288e41edc9'
+        }
+    </script>
+    <!-- 传感器API接口 -->
+    <script src="/static/api/sensorApi.js"></script>
+    <!-- 地图功能脚本 -->
+    <script src="/static/map.js"></script>
+    <!-- 数据管理模块 -->
+    <script src="/static/data/dataManager.js"></script>
+    <!-- 传感器测试数据已整合到dataManager.js中 -->
+    <!-- 传感器数据接收模块 -->
+    <script src="/static/data/sensorReceiver.js"></script>
+    
+    <!-- Tailwind 配置 -->
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#165DFF',
+                        secondary: '#36CFC9',
+                        accent: '#722ED1',
+                        warning: '#FF7D00',
+                        danger: '#F53F3F',
+                        dark: '#1D2129',
+                        light: '#F2F3F5'
+                    },
+                    fontFamily: {
+                        inter: ['Inter', 'system-ui', 'sans-serif'],
+                    },
+                }
+            }
+        }
+    </script>
+    
+    <style type="text/tailwindcss">
+        @layer utilities {
+            .content-auto {
+                content-visibility: auto;
+            }
+            .card-shadow {
+                box-shadow: 0 10px 30px -5px rgba(22, 93, 255, 0.1);
+            }
+            .card-shadow-alert {
+                box-shadow: 0 10px 30px -5px rgba(245, 63, 63, 0.3);
+            }
+            .animate-pulse-slow {
+                animation: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+            }
+            .animate-alert {
+                animation: alert 1s ease-in-out infinite alternate;
+            }
+            .gradient-bg {
+                background: linear-gradient(135deg, #165DFF 0%, #36CFC9 100%);
+            }
+            .page-transition {
+                transition: opacity 0.3s ease-in-out, transform 0.3s ease-in-out;
+            }
+            .page-enter {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            .page-active {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        @keyframes alert {
+            from {
+                transform: scale(1);
+                box-shadow: 0 10px 30px -5px rgba(245, 63, 63, 0.3);
+            }
+            to {
+                transform: scale(1.03);
+                box-shadow: 0 10px 30px -5px rgba(245, 63, 63, 0.5);
+            }
+        }
+    </style>
+</head>
+<body class="font-inter bg-gray-50 text-dark min-h-screen">
+    <!-- 音频警报元素 (默认隐藏) -->
+    <audio id="alert-sound" preload="auto">
+        <source src="https://assets.mixkit.co/sfx/preview/mixkit-alarm-digital-clock-beep-989.mp3" type="audio/mpeg">
+     您的浏览器不支持音频元素。
+   </audio>
+    
+    <!-- 顶部导航栏 -->
+    <header class="gradient-bg text-white shadow-md fixed top-0 left-0 right-0 z-50 transition-all duration-300">
+        <div class="container mx-auto px-4 py-4 flex justify-between items-center">
+            <h1 class="text-xl font-bold" id="page-title">传感器监控</h1>
+            <div class="flex items-center space-x-3">
+                <span class="text-sm opacity-90" id="update-time">更新于: 加载中...</span>
+                <button id="refresh-btn" class="p-2 rounded-full hover:bg-white/20 transition-colors">
+                    <i class="fa fa-refresh"></i>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- 主内容区 - 包含所有页面 -->
+    <main class="container mx-auto px-4 pt-24 pb-20">
+        <!-- 仪表盘页面 -->
+        <div id="dashboard-page" class="page-transition page-active">
+            <!-- 状态指示器 -->
+            <div class="flex items-center mb-6">
+                <div class="w-2 h-2 rounded-full bg-green-500 animate-pulse mr-2"></div>
+                <p class="text-sm text-gray-600">实时数据监控中</p>
+                <div id="distance-alert-indicator" class="hidden ml-4 flex items-center text-danger text-sm">
+                    <i class="fa fa-exclamation-circle mr-1"></i>
+                    <span>激光距离过近警报</span>
+                </div>
+            </div>
+            
+            <!-- 传感器数据卡片 -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                <!-- 温度卡片 -->
+                <div class="bg-white rounded-2xl p-5 card-shadow transform transition-all duration-300 hover:scale-[1.02]">
+                    <div class="flex justify-between items-start mb-3">
+                        <div class="flex items-center">
+                            <div class="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center text-danger mr-3">
+                                <i class="fa fa-thermometer-half text-xl"></i>
+                            </div>
+                            <h2 class="text-lg font-semibold">温度</h2>
+                        </div>
+                        <span class="text-xs px-2 py-1 bg-blue-50 text-primary rounded-full">实时</span>
+                    </div>
+                    <div class="flex items-end">
+                        <span class="text-4xl font-bold temperature-value">25.6</span>
+                        <span class="text-xl ml-1 mb-1">°C</span>
+                    </div>
+                    <div class="mt-3 h-12">
+                        <canvas id="temperature-chart"></canvas>
+                    </div>
+                </div>
+                
+                <!-- 湿度卡片 -->
+                <div class="bg-white rounded-2xl p-5 card-shadow transform transition-all duration-300 hover:scale-[1.02]">
+                    <div class="flex justify-between items-start mb-3">
+                        <div class="flex items-center">
+                            <div class="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-primary mr-3">
+                                <i class="fa fa-tint text-xl"></i>
+                            </div>
+                            <h2 class="text-lg font-semibold">湿度</h2>
+                        </div>
+                        <span class="text-xs px-2 py-1 bg-blue-50 text-primary rounded-full">实时</span>
+                    </div>
+                    <div class="flex items-end">
+                        <span class="text-4xl font-bold humidity-value">62</span>
+                        <span class="text-xl ml-1 mb-1">%</span>
+                    </div>
+                    <div class="mt-3 h-12">
+                        <canvas id="humidity-chart"></canvas>
+                    </div>
+                </div>
+                
+                <!-- 激光测距卡片 -->
+                <div id="distance-card" class="bg-white rounded-2xl p-5 card-shadow transform transition-all duration-300 hover:scale-[1.02]">
+                    <div class="flex justify-between items-start mb-3">
+                        <div class="flex items-center">
+                            <div id="distance-icon-container" class="w-10 h-10 rounded-full bg-purple-100 flex items-center justify-center text-accent mr-3">
+                                <i class="fa fa-arrows-h text-xl"></i>
+                            </div>
+                            <h2 class="text-lg font-semibold">激光测距</h2>
+                        </div>
+                        <div class="flex items-center">
+                            <span class="text-xs px-2 py-1 bg-blue-50 text-primary rounded-full mr-2">实时</span>
+                            <div id="distance-alert-icon" class="hidden text-danger">
+                                <i class="fa fa-exclamation-triangle"></i>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="flex items-end">
+                        <span id="distance-value" class="text-4xl font-bold distance-value">4.8</span>
+                        <span class="text-xl ml-1 mb-1">m</span>
+                    </div>
+                    <div class="mt-3 h-12">
+                        <canvas id="distance-chart"></canvas>
+                    </div>
+                    <div id="distance-alert-message" class="hidden mt-2 text-sm text-danger flex items-center">
+                        <i class="fa fa-warning mr-1"></i>
+                        <span>距离过近！请注意安全！</span>
+                    </div>
+                </div>
+                
+                <!-- 位置信息卡片 -->
+                <div class="bg-white rounded-2xl p-5 card-shadow transform transition-all duration-300 hover:scale-[1.02]">
+                    <div class="flex justify-between items-start mb-3">
+                        <div class="flex items-center">
+                            <div class="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center text-green-600 mr-3">
+                                <i class="fa fa-map-marker text-xl"></i>
+                            </div>
+                            <h2 class="text-lg font-semibold">位置信息</h2>
+                        </div>
+                        <span class="text-xs px-2 py-1 bg-blue-50 text-primary rounded-full">实时</span>
+                    </div>
+                    <div class="space-y-2">
+                        <div class="flex justify-between">
+                            <span class="text-gray-500">经度:</span>
+                            <span class="font-semibold longitude-value">116.403874</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-gray-500">纬度:</span>
+                            <span class="font-semibold latitude-value">39.914885</span>
+                        </div>
+                    </div>
+                    <div class="mt-3">
+                        <button id="view-map-btn" class="text-primary text-sm flex items-center cursor-pointer hover:text-blue-600 transition-colors" onclick="console.log('按钮被点击了')">
+                            <i class="fa fa-map-o mr-1"></i> 查看地图
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 数据状态卡片 -->
+            <div class="bg-white rounded-2xl p-5 card-shadow mb-6">
+                <h2 class="text-lg font-semibold mb-4">传感器状态</h2>
+                <div class="space-y-4">
+                    <div class="flex justify-between items-center">
+                        <div class="flex items-center">
+                            <i class="fa fa-thermometer-half text-danger mr-3"></i>
+                            <span>温度传感器</span>
+                        </div>
+                        <div class="flex items-center">
+                            <span class="text-green-500 mr-2">正常</span>
+                            <i class="fa fa-check-circle text-green-500"></i>
+                        </div>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <div class="flex items-center">
+                            <i class="fa fa-tint text-primary mr-3"></i>
+                            <span>湿度传感器</span>
+                        </div>
+                        <div class="flex items-center">
+                            <span class="text-green-500 mr-2">正常</span>
+                            <i class="fa fa-check-circle text-green-500"></i>
+                        </div>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <div class="flex items-center">
+                            <i id="distance-status-icon" class="fa fa-arrows-h text-accent mr-3"></i>
+                            <span>激光测距传感器</span>
+                        </div>
+                        <div id="distance-status" class="flex items-center">
+                            <span class="text-green-500 mr-2">正常</span>
+                            <i class="fa fa-check-circle text-green-500"></i>
+                        </div>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <div class="flex items-center">
+                            <i class="fa fa-map-marker text-green-600 mr-3"></i>
+                            <span>GPS模块</span>
+                        </div>
+                        <div class="flex items-center">
+                            <span class="text-green-500 mr-2">正常</span>
+                            <i class="fa fa-check-circle text-green-500"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 数据更新日志 -->
+            <div class="bg-white rounded-2xl p-5 card-shadow">
+                <h2 class="text-lg font-semibold mb-4">更新日志</h2>
+                <div class="space-y-3 max-h-40 overflow-y-auto pr-2" id="update-log">
+                    <div class="text-sm text-gray-500 flex justify-between">
+                        <span>温度数据更新</span>
+                        <span>刚刚</span>
+                    </div>
+                    <div class="text-sm text-gray-500 flex justify-between">
+                        <span>湿度数据更新</span>
+                        <span>1分钟前</span>
+                    </div>
+                    <div class="text-sm text-gray-500 flex justify-between">
+                        <span>位置信息更新</span>
+                        <span>3分钟前</span>
+                    </div>
+                    <div class="text-sm text-gray-500 flex justify-between">
+                        <span>激光测距数据更新</span>
+                        <span>5分钟前</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 历史页面 -->
+        <div id="history-page" class="page-transition page-enter hidden">
+            <div class="mb-6">
+                <h2 class="text-xl font-bold mb-4">历史数据记录</h2>
+                
+                <!-- 数据筛选器 -->
+                <div class="bg-white rounded-xl p-4 card-shadow mb-6">
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm text-gray-500 mb-1">传感器类型</label>
+                            <select id="sensor-type" class="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50">
+                                <option value="all">全部传感器</option>
+                                <option value="temperature">温度</option>
+                                <option value="humidity">湿度</option>
+                                <option value="distance">激光测距</option>
+                                <option value="location">位置信息</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm text-gray-500 mb-1">时间范围</label>
+                            <select id="time-range" class="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50">
+                                <option value="today">今天</option>
+                                <option value="yesterday">昨天</option>
+                                <option value="7days">近7天</option>
+                                <option value="30days">近30天</option>
+                                <option value="custom">自定义</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="mt-4 flex justify-end">
+                        <button id="filter-btn" class="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors flex items-center">
+                            <i class="fa fa-filter mr-2"></i> 筛选
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- 历史数据图表 -->
+                <div class="bg-white rounded-xl p-4 card-shadow mb-6">
+                    <h3 class="text-lg font-semibold mb-4">数据趋势图表</h3>
+                    <div class="h-64">
+                        <canvas id="history-chart"></canvas>
+                    </div>
+                </div>
+                
+                <!-- 历史记录列表 -->
+                <div class="bg-white rounded-xl p-4 card-shadow">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="text-lg font-semibold">历史记录</h3>
+                        <button class="text-primary text-sm flex items-center">
+                            <i class="fa fa-download mr-1"></i> 导出数据
+                        </button>
+                    </div>
+                    
+                    <div class="space-y-3 max-h-80 overflow-y-auto pr-2" id="history-list">
+                        <!-- 历史记录项 -->
+                        <div class="p-3 border border-gray-100 rounded-lg hover:bg-gray-50 transition-colors">
+                            <div class="flex justify-between items-start">
+                                <div class="flex items-center">
+                                    <div class="w-8 h-8 rounded-full bg-red-100 flex items-center justify-center text-danger mr-2">
+                                        <i class="fa fa-thermometer-half"></i>
+                                    </div>
+                                    <div>
+                                        <h4 class="font-medium">温度记录</h4>
+                                        <p class="text-sm text-gray-500">2023-06-15 14:30:22</p>
+                                    </div>
+                                </div>
+                                <span class="text-lg font-semibold">25.3°C</span>
+                            </div>
+                        </div>
+                        
+                        <div class="p-3 border border-gray-100 rounded-lg hover:bg-gray-50 transition-colors">
+                            <div class="flex justify-between items-start">
+                                <div class="flex items-center">
+                                    <div class="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-primary mr-2">
+                                        <i class="fa fa-tint"></i>
+                                    </div>
+                                    <div>
+                                        <h4 class="font-medium">湿度记录</h4>
+                                        <p class="text-sm text-gray-500">2023-06-15 14:25:18</p>
+                                    </div>
+                                </div>
+                                <span class="text-lg font-semibold">61%</span>
+                            </div>
+                        </div>
+                        
+                        <div class="p-3 border border-gray-100 rounded-lg hover:bg-gray-50 transition-colors">
+                            <div class="flex justify-between items-start">
+                                <div class="flex items-center">
+                                    <div class="w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center text-accent mr-2">
+                                        <i class="fa fa-arrows-h"></i>
+                                    </div>
+                                    <div>
+                                        <h4 class="font-medium">激光测距记录</h4>
+                                        <p class="text-sm text-gray-500">2023-06-15 14:20:05</p>
+                                    </div>
+                                </div>
+                                <span class="text-lg font-semibold">4.7m</span>
+                            </div>
+                        </div>
+                        
+                        <div class="p-3 border border-gray-100 rounded-lg hover:bg-gray-50 transition-colors">
+                            <div class="flex justify-between items-start">
+                                <div class="flex items-center">
+                                    <div class="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center text-green-600 mr-2">
+                                        <i class="fa fa-map-marker"></i>
+                                    </div>
+                                    <div>
+                                        <h4 class="font-medium">位置信息记录</h4>
+                                        <p class="text-sm text-gray-500">2023-06-15 14:15:42</p>
+                                    </div>
+                                </div>
+                                <span class="text-sm font-semibold">116.4038, 39.9149</span>
+                            </div>
+                        </div>
+                        
+                        <div class="p-3 border border-gray-100 rounded-lg hover:bg-gray-50 transition-colors">
+                            <div class="flex justify-between items-start">
+                                <div class="flex items-center">
+                                    <div class="w-8 h-8 rounded-full bg-red-100 flex items-center justify-center text-danger mr-2">
+                                        <i class="fa fa-thermometer-half"></i>
+                                    </div>
+                                    <div>
+                                        <h4 class="font-medium">温度记录</h4>
+                                        <p class="text-sm text-gray-500">2023-06-15 14:10:30</p>
+                                    </div>
+                                </div>
+                                <span class="text-lg font-semibold">25.1°C</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 设置页面 -->
+        <div id="settings-page" class="page-transition page-enter hidden">
+            <!-- 警报设置 -->
+            <div class="bg-white rounded-2xl p-5 card-shadow mb-6">
+                <h3 class="text-lg font-semibold mb-4 flex items-center">
+                    <i class="fa fa-bell text-warning mr-2"></i> 警报设置
+                </h3>
+                
+                <!-- 距离警报阈值设置 -->
+                <div class="mb-6">
+                    <div class="flex justify-between items-center mb-2">
+                        <label class="text-sm text-gray-600">激光测距警报阈值</label>
+                        <span class="text-sm font-medium" id="distance-threshold-value">2.0米</span>
+                    </div>
+                    <input type="range" id="distance-threshold" min="0.5" max="5" step="0.1" value="2.0" 
+                           class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-primary">
+                    <div class="flex justify-between text-xs text-gray-500 mt-1">
+                        <span>0.5米</span>
+                        <span>5.0米</span>
+                    </div>
+                </div>
+                
+                <!-- 声音警报开关 -->
+                <div class="flex justify-between items-center mb-4">
+                    <label class="text-sm text-gray-600">声音警报</label>
+                    <label class="relative inline-flex items-center cursor-pointer">
+                        <input type="checkbox" id="sound-alert-toggle" checked class="sr-only peer">
+                        <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-primary/50 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+                    </label>
+                </div>
+                
+                <!-- 震动警报开关 -->
+                <div class="flex justify-between items-center">
+                    <label class="text-sm text-gray-600">震动警报</label>
+                    <label class="relative inline-flex items-center cursor-pointer">
+                        <input type="checkbox" id="vibration-alert-toggle" checked class="sr-only peer">
+                        <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-primary/50 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+                    </label>
+                </div>
+            </div>
+            
+            <!-- 数据设置 -->
+            <div class="bg-white rounded-2xl p-5 card-shadow mb-6">
+                <h3 class="text-lg font-semibold mb-4 flex items-center">
+                    <i class="fa fa-database text-primary mr-2"></i> 数据设置
+                </h3>
+                
+                <!-- 数据采样频率 -->
+                <div class="flex justify-between items-center mb-4">
+                    <label class="text-sm text-gray-600">数据采样频率</label>
+                    <select id="sample-rate" class="px-3 py-1 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50">
+                        <option>1秒/次</option>
+                        <option selected>5秒/次</option>
+                        <option>10秒/次</option>
+                        <option>30秒/次</option>
+                        <option>1分钟/次</option>
+                    </select>
+                </div>
+                
+                <!-- 数据存储期限 -->
+                <div class="flex justify-between items-center mb-4">
+                    <label class="text-sm text-gray-600">数据存储期限</label>
+                    <select id="storage-period" class="px-3 py-1 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50">
+                        <option>7天</option>
+                        <option selected>30天</option>
+                        <option>90天</option>
+                        <option>180天</option>
+                        <option>365天</option>
+                    </select>
+                </div>
+                
+                <!-- 自动同步数据 -->
+                <div class="flex justify-between items-center">
+                    <label class="text-sm text-gray-600">自动同步数据到云端</label>
+                    <label class="relative inline-flex items-center cursor-pointer">
+                        <input type="checkbox" checked class="sr-only peer">
+                        <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-primary/50 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+                    </label>
+                </div>
+            </div>
+            
+            <!-- 显示设置 -->
+            <div class="bg-white rounded-2xl p-5 card-shadow mb-6">
+                <h3 class="text-lg font-semibold mb-4 flex items-center">
+                    <i class="fa fa-eye text-accent mr-2"></i> 显示设置
+                </h3>
+                
+                <div class="space-y-4">
+                    <div class="flex justify-between items-center">
+                        <label class="text-sm text-gray-600">深色模式</label>
+                        <label class="relative inline-flex items-center cursor-pointer">
+                            <input type="checkbox" class="sr-only peer">
+                            <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-primary/50 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+                        </label>
+                    </div>
+                    
+                    <div class="flex justify-between items-center">
+                        <label class="text-sm text-gray-600">显示数据单位</label>
+                        <label class="relative inline-flex items-center cursor-pointer">
+                            <input type="checkbox" checked class="sr-only peer">
+                            <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-primary/50 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+                        </label>
+                    </div>
+                    
+                    <div class="flex justify-between items-center">
+                        <label class="text-sm text-gray-600">显示数据趋势图</label>
+                        <label class="relative inline-flex items-center cursor-pointer">
+                            <input type="checkbox" checked class="sr-only peer">
+                            <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-primary/50 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+                        </label>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 系统设置 -->
+            <div class="bg-white rounded-2xl p-5 card-shadow">
+                <h3 class="text-lg font-semibold mb-4 flex items-center">
+                    <i class="fa fa-cog text-dark mr-2"></i> 系统设置
+                </h3>
+                
+                <div class="space-y-4">
+                    <button class="w-full flex justify-between items-center p-3 border border-gray-100 rounded-lg hover:bg-gray-50 transition-colors">
+                        <span class="text-sm">传感器校准</span>
+                        <i class="fa fa-chevron-right text-gray-400"></i>
+                    </button>
+                    
+                    <button class="w-full flex justify-between items-center p-3 border border-gray-100 rounded-lg hover:bg-gray-50 transition-colors">
+                        <span class="text-sm">固件更新</span>
+                        <div class="flex items-center">
+                            <span class="text-xs text-green-600 mr-2">最新版本</span>
+                            <i class="fa fa-chevron-right text-gray-400"></i>
+                        </div>
+                    </button>
+                    
+                    <button class="w-full flex justify-between items-center p-3 border border-gray-100 rounded-lg hover:bg-gray-50 transition-colors">
+                        <span class="text-sm">恢复默认设置</span>
+                        <i class="fa fa-chevron-right text-gray-400"></i>
+                    </button>
+                    
+                    <button class="w-full flex justify-between items-center p-3 border border-gray-100 rounded-lg hover:bg-gray-50 transition-colors text-danger">
+                        <span class="text-sm">清除所有数据</span>
+                        <i class="fa fa-chevron-right"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 地图页面 -->
+        <div id="map-page" class="page-transition page-enter hidden">
+            <div class="bg-white rounded-2xl p-5 card-shadow mb-6">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-lg font-semibold">位置地图</h2>
+                    <button id="back-to-dashboard" class="text-primary flex items-center">
+                        <i class="fa fa-arrow-left mr-1"></i> 返回
+                    </button>
+                </div>
+                <div id="map-container" style="width: 100%; height: 400px; border-radius: 12px;"></div>
+                <div class="mt-4 flex justify-between items-center text-sm text-gray-600">
+                    <span>当前位置</span>
+                    <button id="refresh-location" class="text-primary">
+                        <i class="fa fa-refresh mr-1"></i> 刷新位置
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 我的页面 -->
+        <div id="my-page" class="page-transition page-enter hidden">
+            <!-- 用户信息 -->
+            <div class="bg-white rounded-2xl p-6 card-shadow mb-6 text-center">
+                <div class="w-20 h-20 rounded-full overflow-hidden mx-auto mb-4 border-4 border-primary/20">
+                    <img src="https://picsum.photos/200/200" alt="用户头像" class="w-full h-full object-cover">
+                </div>
+                <h2 class="text-xl font-bold mb-1">传感器管理员</h2>
+                <p class="text-gray-500 text-sm mb-4">admin@example.com</p>
+                <div class="flex justify-center space-x-2">
+                    <span class="px-3 py-1 bg-blue-50 text-primary text-xs rounded-full">专业版</span>
+                    <span class="px-3 py-1 bg-green-50 text-green-600 text-xs rounded-full">已认证</span>
+                </div>
+            </div>
+            
+            <!-- 功能选项 -->
+            <div class="bg-white rounded-2xl p-5 card-shadow mb-6">
+                <h3 class="text-lg font-semibold mb-4">账户管理</h3>
+                
+                <div class="space-y-3">
+                    <button class="w-full flex justify-between items-center p-3 border border-gray-100 rounded-lg hover:bg-gray-50 transition-colors">
+                        <div class="flex items-center">
+                            <i class="fa fa-user-circle text-primary mr-3"></i>
+                            <span>个人资料</span>
+                        </div>
+                        <i class="fa fa-chevron-right text-gray-400"></i>
+                    </button>
+                    
+                    <button class="w-full flex justify-between items-center p-3 border border-gray-100 rounded-lg hover:bg-gray-50 transition-colors">
+                        <div class="flex items-center">
+                            <i class="fa fa-shield text-primary mr-3"></i>
+                            <span>安全设置</span>
+                        </div>
+                        <i class="fa fa-chevron-right text-gray-400"></i>
+                    </button>
+                    
+                    <button class="w-full flex justify-between items-center p-3 border border-gray-100 rounded-lg hover:bg-gray-50 transition-colors">
+                        <div class="flex items-center">
+                            <i class="fa fa-credit-card text-primary mr-3"></i>
+                            <span>订阅管理</span>
+                        </div>
+                        <i class="fa fa-chevron-right text-gray-400"></i>
+                    </button>
+                    
+                    <button class="w-full flex justify-between items-center p-3 border border-gray-100 rounded-lg hover:bg-gray-50 transition-colors">
+                        <div class="flex items-center">
+                            <i class="fa fa-bell-o text-primary mr-3"></i>
+                            <span>通知中心</span>
+                        </div>
+                        <i class="fa fa-chevron-right text-gray-400"></i>
+                    </button>
+                </div>
+            </div>
+            
+            <!-- 帮助与支持 -->
+            <div class="bg-white rounded-2xl p-5 card-shadow mb-6">
+                <h3 class="text-lg font-semibold mb-4">帮助与支持</h3>
+                
+                <div class="space-y-3">
+                    <button class="w-full flex justify-between items-center p-3 border border-gray-100 rounded-lg hover:bg-gray-50 transition-colors">
+                        <div class="flex items-center">
+                            <i class="fa fa-question-circle text-primary mr-3"></i>
+                            <span>使用帮助</span>
+                        </div>
+                        <i class="fa fa-chevron-right text-gray-400"></i>
+                    </button>
+                    
+                    <button class="w-full flex justify-between items-center p-3 border border-gray-100 rounded-lg hover:bg-gray-50 transition-colors">
+                        <div class="flex items-center">
+                            <i class="fa fa-file-text-o text-primary mr-3"></i>
+                            <span>用户手册</span>
+                        </div>
+                        <i class="fa fa-chevron-right text-gray-400"></i>
+                    </button>
+                    
+                    <button class="w-full flex justify-between items-center p-3 border border-gray-100 rounded-lg hover:bg-gray-50 transition-colors">
+                        <div class="flex items-center">
+                            <i class="fa fa-envelope-o text-primary mr-3"></i>
+                            <span>联系客服</span>
+                        </div>
+                        <i class="fa fa-chevron-right text-gray-400"></i>
+                    </button>
+                </div>
+            </div>
+            
+            <!-- 关于信息 -->
+            <div class="bg-white rounded-2xl p-5 card-shadow">
+                <h3 class="text-lg font-semibold mb-4">关于</h3>
+                <div class="space-y-3">
+                    <div class="flex justify-between items-center">
+                        <span class="text-sm text-gray-600">应用版本</span>
+                        <span class="text-sm font-medium">v1.2.0</span>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <span class="text-sm text-gray-600">传感器数量</span>
+                        <span class="text-sm font-medium">4个</span>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <span class="text-sm text-gray-600">最后更新</span>
+                        <span class="text-sm font-medium">2023-06-10</span>
+                    </div>
+                    <button class="w-full mt-4 py-2 border border-gray-200 rounded-lg text-sm text-gray-600 hover:bg-gray-50 transition-colors">
+                        检查更新
+                    </button>
+                    <button class="w-full mt-2 py-2 border border-gray-200 rounded-lg text-sm text-gray-600 hover:bg-gray-50 transition-colors">
+                        隐私政策
+                    </button>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- 底部导航 -->
+    <footer class="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 py-3 px-6 z-40">
+        <div class="flex justify-around">
+            <button id="dashboard-btn" class="flex flex-col items-center text-primary">
+                <i class="fa fa-dashboard text-xl mb-1"></i>
+                <span class="text-xs">仪表盘</span>
+            </button>
+            <button id="history-btn" class="flex flex-col items-center text-gray-400">
+                <i class="fa fa-history text-xl mb-1"></i>
+                <span class="text-xs">历史</span>
+            </button>
+            <button id="settings-btn" class="flex flex-col items-center text-gray-400">
+                <i class="fa fa-cog text-xl mb-1"></i>
+                <span class="text-xs">设置</span>
+            </button>
+            <button id="my-btn" class="flex flex-col items-center text-gray-400">
+                <i class="fa fa-user text-xl mb-1"></i>
+                <span class="text-xs">我的</span>
+            </button>
+        </div>
+    </footer>
+
+    <script>
+        // 常量定义
+        const DISTANCE_ALERT_THRESHOLD = 2; // 默认距离警报阈值，单位：米
+        let isAlertActive = false; // 警报状态
+        let charts = {}; // 存储所有图表实例
+        
+        // 初始化函数
+        function init() {
+            // 初始化仪表盘图表
+            initDashboardCharts();
+            
+            // 初始化历史页面图表
+            initHistoryChart();
+            
+            // 设置定时更新数据
+            setInterval(() => updateData(), 5000);
+            
+            // 初始化页面导航
+            initNavigation();
+            
+            // 初始化事件监听
+            initEventListeners();
+            
+            // 初始化更新时间
+            const now = new Date();
+            document.getElementById('update-time').textContent = `更新于: ${now.toLocaleTimeString()}`;
+        }
+        
+        // 初始化仪表盘图表
+        function initDashboardCharts() {
+            // 温度图表
+            const tempCtx = document.getElementById('temperature-chart').getContext('2d');
+            charts.tempChart = new Chart(tempCtx, {
+                type: 'line',
+                data: {
+                    labels: Array(10).fill(''),
+                    datasets: [{
+                        data: [24.8, 25.1, 25.3, 25.5, 25.4, 25.6, 25.7, 25.6, 25.5, 25.6],
+                        borderColor: '#F53F3F',
+                        backgroundColor: 'rgba(245, 63, 63, 0.1)',
+                        tension: 0.4,
+                        fill: true
+                    }]
+                },
+                options: getChartOptions()
+            });
+            
+            // 湿度图表
+            const humidityCtx = document.getElementById('humidity-chart').getContext('2d');
+            charts.humidityChart = new Chart(humidityCtx, {
+                type: 'line',
+                data: {
+                    labels: Array(10).fill(''),
+                    datasets: [{
+                        data: [65, 64, 63, 62, 61, 62, 63, 62, 61, 62],
+                        borderColor: '#165DFF',
+                        backgroundColor: 'rgba(22, 93, 255, 0.1)',
+                        tension: 0.4,
+                        fill: true
+                    }]
+                },
+                options: getChartOptions()
+            });
+            
+            // 距离图表
+            const distanceCtx = document.getElementById('distance-chart').getContext('2d');
+            charts.distanceChart = new Chart(distanceCtx, {
+                type: 'line',
+                data: {
+                    labels: Array(10).fill(''),
+                    datasets: [{
+                        data: [5.2, 5.0, 4.9, 4.8, 4.7, 4.8, 4.9, 4.8, 4.7, 4.8],
+                        borderColor: '#722ED1',
+                        backgroundColor: 'rgba(114, 46, 209, 0.1)',
+                        tension: 0.4,
+                        fill: true
+                    }]
+                },
+                options: getChartOptions()
+            });
+        }
+        
+        // 初始化历史页面图表
+        function initHistoryChart() {
+            const historyCtx = document.getElementById('history-chart').getContext('2d');
+            const hours = Array.from({length: 12}, (_, i) => `${i+8}:00`);
+            
+            charts.historyChart = new Chart(historyCtx, {
+                type: 'line',
+                data: {
+                    labels: hours,
+                    datasets: [
+                        {
+                            label: '温度 (°C)',
+                            data: [24.1, 24.5, 25.0, 25.6, 26.1, 26.3, 26.0, 25.7, 25.3, 25.0, 24.7, 24.5],
+                            borderColor: '#F53F3F',
+                            backgroundColor: 'rgba(245, 63, 63, 0.1)',
+                            tension: 0.4,
+                            fill: true,
+                            yAxisID: 'y'
+                        },
+                        {
+                            label: '湿度 (%)',
+                            data: [65, 64, 63, 62, 60, 58, 57, 59, 61, 62, 63, 64],
+                            borderColor: '#165DFF',
+                            backgroundColor: 'rgba(22, 93, 255, 0.1)',
+                            tension: 0.4,
+                            fill: true,
+                            yAxisID: 'y1'
+                        },
+                        {
+                            label: '距离 (m)',
+                            data: [4.5, 4.7, 4.6, 4.8, 4.9, 5.0, 4.8, 4.7, 4.6, 4.5, 4.7, 4.8],
+                            borderColor: '#722ED1',
+                            backgroundColor: 'rgba(114, 46, 209, 0.1)',
+                            tension: 0.4,
+                            fill: true,
+                            yAxisID: 'y2'
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'top',
+                        },
+                        tooltip: {
+                            mode: 'index',
+                            intersect: false
+                        }
+                    },
+                    scales: {
+                        y: {
+                            type: 'linear',
+                            display: true,
+                            position: 'left',
+                            title: {
+                                display: true,
+                                text: '温度 (°C)'
+                            },
+                            min: 20,
+                            max: 35
+                        },
+                        y1: {
+                            type: 'linear',
+                            display: true,
+                            position: 'right',
+                            title: {
+                                display: true,
+                                text: '湿度 (%)'
+                            },
+                            min: 0,
+                            max: 100,
+                            grid: {
+                                drawOnChartArea: false
+                            }
+                        },
+                        y2: {
+                            type: 'linear',
+                            display: false,
+                            position: 'right',
+                            min: 0,
+                            max: 10,
+                            grid: {
+                                drawOnChartArea: false
+                            }
+                        }
+                    }
+                }
+            });
+        }
+        
+        // 图表通用配置
+        function getChartOptions() {
+            return {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: { enabled: false }
+                },
+                scales: {
+                    x: { display: false },
+                    y: { display: false }
+                },
+                elements: {
+                    point: { radius: 0 }
+                }
+            };
+        }
+        
+        // 初始化页面导航
+        function initNavigation() {
+            // 导航按钮
+            const dashboardBtn = document.getElementById('dashboard-btn');
+            const historyBtn = document.getElementById('history-btn');
+            const settingsBtn = document.getElementById('settings-btn');
+            const myBtn = document.getElementById('my-btn');
+            
+            // 页面内容
+            const dashboardPage = document.getElementById('dashboard-page');
+            const historyPage = document.getElementById('history-page');
+            const settingsPage = document.getElementById('settings-page');
+            const myPage = document.getElementById('my-page');
+            
+            // 页面标题
+            const pageTitle = document.getElementById('page-title');
+            
+            // 导航到仪表盘
+            dashboardBtn.addEventListener('click', () => {
+                hideAllPages();
+                setActiveNavButton(dashboardBtn);
+                pageTitle.textContent = '传感器监控';
+                showPage(dashboardPage);
+                document.getElementById('refresh-btn').classList.remove('hidden');
+            });
+            
+            // 导航到历史
+            historyBtn.addEventListener('click', () => {
+                hideAllPages();
+                setActiveNavButton(historyBtn);
+                pageTitle.textContent = '历史记录';
+                showPage(historyPage);
+                document.getElementById('refresh-btn').classList.add('hidden');
+            });
+            
+            // 导航到设置
+            settingsBtn.addEventListener('click', () => {
+                hideAllPages();
+                setActiveNavButton(settingsBtn);
+                pageTitle.textContent = '设置';
+                showPage(settingsPage);
+                document.getElementById('refresh-btn').classList.add('hidden');
+            });
+            
+            // 导航到我的
+            myBtn.addEventListener('click', () => {
+                hideAllPages();
+                setActiveNavButton(myBtn);
+                pageTitle.textContent = '我的';
+                showPage(myPage);
+                document.getElementById('refresh-btn').classList.add('hidden');
+            });
+        }
+        
+        // 隐藏所有页面
+        function hideAllPages() {
+            console.log('开始隐藏所有页面...');
+            const pages = document.querySelectorAll('main > div');
+            console.log('找到页面数量:', pages.length);
+            pages.forEach((page, index) => {
+                console.log(`隐藏页面 ${index}:`, page.id, page.classList.toString());
+                page.classList.add('hidden', 'page-enter');
+                page.classList.remove('page-active');
+            });
+        }
+        
+        // 显示指定页面
+        function showPage(page) {
+            console.log('开始显示页面:', page.id);
+            console.log('显示前页面状态:', page.classList.toString());
+            
+            page.classList.remove('hidden');
+            console.log('移除hidden类后状态:', page.classList.toString());
+            
+            // 触发重排后添加活跃类以启用动画
+            setTimeout(() => {
+                page.classList.remove('page-enter');
+                page.classList.add('page-active');
+                console.log('最终页面状态:', page.classList.toString());
+            }, 10);
+        }
+        
+        // 设置活跃的导航按钮
+        function setActiveNavButton(button) {
+            const buttons = document.querySelectorAll('footer button');
+            buttons.forEach(btn => {
+                btn.classList.remove('text-primary');
+                btn.classList.add('text-gray-400');
+            });
+            
+            button.classList.remove('text-gray-400');
+            button.classList.add('text-primary');
+        }
+        
+        // 初始化事件监听器
+        function initEventListeners() {
+            // 刷新按钮事件
+            document.getElementById('refresh-btn').addEventListener('click', () => {
+                // 添加旋转动画
+                const refreshIcon = document.querySelector('#refresh-btn i');
+                refreshIcon.classList.add('animate-spin');
+                
+                // 更新数据
+                updateData();
+                
+                // 移除旋转动画
+                setTimeout(() => {
+                    refreshIcon.classList.remove('animate-spin');
+                }, 500);
+            });
+            
+            // 距离阈值滑块事件
+            const thresholdSlider = document.getElementById('distance-threshold');
+            const thresholdValue = document.getElementById('distance-threshold-value');
+            
+            thresholdSlider.addEventListener('input', () => {
+                const value = parseFloat(thresholdSlider.value).toFixed(1);
+                thresholdValue.textContent = `${value}米`;
+                
+                // 更新警报阈值
+                thresholdSlider.dataset.newValue = value;
+            });
+            
+            thresholdSlider.addEventListener('change', () => {
+                if (thresholdSlider.dataset.newValue) {
+                    const newThreshold = parseFloat(thresholdSlider.dataset.newValue);
+                    
+                    // 检查当前距离是否需要触发警报
+                    const currentDistance = parseFloat(document.querySelector('.distance-value').textContent);
+                    checkDistanceAlert(currentDistance, newThreshold);
+                    
+                    // 更新存储的阈值
+                    thresholdSlider.dataset.newValue = null;
+                }
+            });
+            
+            // 声音警报开关事件
+            document.getElementById('sound-alert-toggle').addEventListener('change', function() {
+                const alertSound = document.getElementById('alert-sound');
+                if (!this.checked) {
+                    alertSound.pause();
+                }
+            });
+            
+            // 筛选按钮事件
+            document.getElementById('filter-btn').addEventListener('click', () => {
+                // 模拟筛选加载
+                const filterBtn = document.getElementById('filter-btn');
+                const originalText = filterBtn.innerHTML;
+                filterBtn.disabled = true;
+                filterBtn.innerHTML = '<i class="fa fa-spinner fa-spin mr-2"></i> 筛选中...';
+                
+                setTimeout(() => {
+                    filterBtn.disabled = false;
+                    filterBtn.innerHTML = originalText;
+                    // 这里可以添加实际的筛选逻辑
+                }, 1000);
+            });
+            
+            // 采样频率变更事件
+            document.getElementById('sample-rate').addEventListener('change', function() {
+                // 这里可以添加实际的采样频率变更逻辑
+                const selectedRate = this.options[this.selectedIndex].text;
+                addToLog(`数据采样频率已更改为 ${selectedRate}`);
+            });
+            
+            // 存储期限变更事件
+            document.getElementById('storage-period').addEventListener('change', function() {
+                // 这里可以添加实际的存储期限变更逻辑
+                const selectedPeriod = this.options[this.selectedIndex].text;
+                addToLog(`数据存储期限已更改为 ${selectedPeriod}`);
+            });
+
+            // 地图相关功能初始化
+            initMapPage();
+
+            // 更新位置信息显示
+            function updateLocationInfo() {
+                const longitude = document.querySelector('.longitude-value').textContent;
+                const latitude = document.querySelector('.latitude-value').textContent;
+                const locationInfo = document.getElementById('location-info');
+                if (locationInfo) {
+                    locationInfo.textContent = `经度: ${longitude}, 纬度: ${latitude}`;
+                }
+            }
+
+            // 刷新位置（模拟获取新位置）
+            function refreshLocation() {
+                const refreshBtn = document.getElementById('refresh-location');
+                if (refreshBtn) {
+                    refreshBtn.innerHTML = '<i class="fa fa-spinner fa-spin mr-1"></i> 获取中...';
+                    refreshBtn.disabled = true;
+                }
+
+                // 模拟获取位置的过程
+                setTimeout(() => {
+                    // 这里可以添加实际的位置获取逻辑
+                    // 在微信小程序中，这里会调用 wx.getLocation()
+                    updateLocationInfo();
+                    
+                    if (refreshBtn) {
+                        refreshBtn.innerHTML = '<i class="fa fa-refresh mr-1"></i> 刷新位置';
+                        refreshBtn.disabled = false;
+                    }
+                    
+                    // 显示成功提示
+                    showToast('位置已更新');
+                }, 2000);
+            }
+
+            // 显示提示信息
+            function showToast(message) {
+                // 创建提示元素
+                const toast = document.createElement('div');
+                toast.className = 'fixed top-20 left-1/2 transform -translate-x-1/2 bg-black bg-opacity-75 text-white px-4 py-2 rounded-lg text-sm z-50';
+                toast.textContent = message;
+                document.body.appendChild(toast);
+
+                // 2秒后移除
+                setTimeout(() => {
+                    if (toast.parentNode) {
+                        toast.parentNode.removeChild(toast);
+                    }
+                }, 2000);
+            }
+
+            // 打开高德地图定位
+            function openAmapLocation() {
+                const longitude = document.querySelector('.longitude-value').textContent;
+                const latitude = document.querySelector('.latitude-value').textContent;
+                
+                // 检测设备类型
+                const userAgent = navigator.userAgent.toLowerCase();
+                const isMobile = /android|iphone|ipad|ipod|blackberry|iemobile|opera mini/i.test(userAgent);
+                const isIOS = /iphone|ipad|ipod/i.test(userAgent);
+                const isAndroid = /android/i.test(userAgent);
+                
+                let amapUrl = '';
+                
+                if (isMobile) {
+                    if (isIOS) {
+                        // iOS设备 - 尝试打开高德地图App，失败则打开网页版
+                        amapUrl = `iosamap://viewMap?sourceApplication=传感器监控&poiname=传感器位置&lat=${latitude}&lon=${longitude}&dev=0`;
+                        
+                        // 创建隐藏的iframe尝试打开App
+                        const iframe = document.createElement('iframe');
+                        iframe.style.display = 'none';
+                        iframe.src = amapUrl;
+                        document.body.appendChild(iframe);
+                        
+                        // 2秒后如果App没有打开，则打开网页版
+                        setTimeout(() => {
+                            document.body.removeChild(iframe);
+                            window.open(`https://uri.amap.com/marker?position=${longitude},${latitude}&name=传感器位置&src=传感器监控`, '_blank');
+                        }, 2000);
+                        
+                    } else if (isAndroid) {
+                        // Android设备 - 尝试打开高德地图App
+                        amapUrl = `androidamap://viewMap?sourceApplication=传感器监控&poiname=传感器位置&lat=${latitude}&lon=${longitude}&dev=0`;
+                        
+                        // 创建隐藏的iframe尝试打开App
+                        const iframe = document.createElement('iframe');
+                        iframe.style.display = 'none';
+                        iframe.src = amapUrl;
+                        document.body.appendChild(iframe);
+                        
+                        // 2秒后如果App没有打开，则打开网页版
+                        setTimeout(() => {
+                            document.body.removeChild(iframe);
+                            window.open(`https://uri.amap.com/marker?position=${longitude},${latitude}&name=传感器位置&src=传感器监控`, '_blank');
+                        }, 2000);
+                        
+                    } else {
+                        // 其他移动设备直接打开网页版
+                        amapUrl = `https://uri.amap.com/marker?position=${longitude},${latitude}&name=传感器位置&src=传感器监控`;
+                        window.open(amapUrl, '_blank');
+                    }
+                } else {
+                    // PC端直接打开网页版高德地图
+                    amapUrl = `https://uri.amap.com/marker?position=${longitude},${latitude}&name=传感器位置&src=传感器监控`;
+                    window.open(amapUrl, '_blank');
+                }
+                
+                console.log('打开高德地图:', amapUrl);
+                showToast('正在打开高德地图...');
+            }
+            
+            // 滚动效果
+            window.addEventListener('scroll', () => {
+                const header = document.querySelector('header');
+                if (window.scrollY > 10) {
+                    header.classList.add('py-2');
+                    header.classList.remove('py-4');
+                } else {
+                    header.classList.add('py-4');
+                    header.classList.remove('py-2');
+                }
+            });
+        }
+        
+        // 更新数据函数
+        function updateData() {
+            // 模拟温度变化
+            const currentTemp = parseFloat(document.querySelector('.temperature-value').textContent);
+            const newTemp = (currentTemp + (Math.random() * 0.4 - 0.2)).toFixed(1);
+            document.querySelector('.temperature-value').textContent = newTemp;
+
+
+            // 更新温度图表
+            const newTempData = [...charts.tempChart.data.datasets[0].data.slice(1), parseFloat(newTemp)];
+            charts.tempChart.data.datasets[0].data = newTempData;
+            charts.tempChart.update();
+            
+            // 模拟湿度变化
+            const currentHumidity = parseInt(document.querySelector('.humidity-value').textContent);
+            const newHumidity = Math.max(30, Math.min(90, currentHumidity + Math.floor(Math.random() * 3) - 1));
+            document.querySelector('.humidity-value').textContent = newHumidity;
+            
+            // 更新湿度图表
+            const newHumidityData = [...charts.humidityChart.data.datasets[0].data.slice(1), newHumidity];
+            charts.humidityChart.data.datasets[0].data = newHumidityData;
+            charts.humidityChart.update();
+            
+            // 模拟距离变化 - 有时会低于阈值以触发警报
+            const currentDistance = parseFloat(document.querySelector('.distance-value').textContent);
+            // 增加一些随机性，使距离偶尔会低于阈值
+            let distanceChange = (Math.random() * 0.4 - 0.2);
+            // 偶尔生成更大的变化，以便触发警报
+            if (Math.random() < 0.2) {
+                distanceChange = (Math.random() * 1.5 - 1);
+            }
+            const newDistance = Math.max(0.5, (currentDistance + distanceChange)).toFixed(1);
+            document.querySelector('.distance-value').textContent = newDistance;
+            
+            // 更新距离图表
+            const newDistanceData = [...charts.distanceChart.data.datasets[0].data.slice(1), parseFloat(newDistance)];
+            charts.distanceChart.data.datasets[0].data = newDistanceData;
+            charts.distanceChart.update();
+            
+            // 获取当前设置的阈值
+            const currentThreshold = document.getElementById('distance-threshold').dataset.newValue 
+                ? parseFloat(document.getElementById('distance-threshold').dataset.newValue)
+                : parseFloat(document.getElementById('distance-threshold').value);
+            
+            // 检查是否需要触发距离警报
+            checkDistanceAlert(parseFloat(newDistance), currentThreshold);
+            
+            // 模拟经纬度微小变化
+            const currentLongitude = parseFloat(document.querySelector('.longitude-value').textContent);
+            const newLongitude = (currentLongitude + (Math.random() * 0.00002 - 0.00001)).toFixed(6);
+            document.querySelector('.longitude-value').textContent = newLongitude;
+            
+            const currentLatitude = parseFloat(document.querySelector('.latitude-value').textContent);
+            const newLatitude = (currentLatitude + (Math.random() * 0.00002 - 0.00001)).toFixed(6);
+            document.querySelector('.latitude-value').textContent = newLatitude;
+            
+            // 更新时间
+            const now = new Date();
+            const timeString = now.toLocaleTimeString();
+            document.getElementById('update-time').textContent = `更新于: ${timeString}`;
+            
+            // 添加到日志
+            addToLog('数据更新');
+        }
+        
+        // 检查距离是否过近并触发警报
+        async function checkDistanceAlert(distance, threshold = DISTANCE_ALERT_THRESHOLD) {
+            const distanceCard = document.getElementById('distance-card');
+            const distanceIconContainer = document.getElementById('distance-icon-container');
+            const distanceValue = document.getElementById('distance-value');
+            const distanceAlertIcon = document.getElementById('distance-alert-icon');
+            const distanceAlertMessage = document.getElementById('distance-alert-message');
+            const distanceAlertIndicator = document.getElementById('distance-alert-indicator');
+            const distanceStatus = document.getElementById('distance-status');
+            const distanceStatusIcon = document.getElementById('distance-status-icon');
+            const distanceChart = charts.distanceChart;
+            const alertSound = document.getElementById('alert-sound');
+            
+            // 获取当前警报设置
+            let alertSettings;
+            try {
+                alertSettings = await window.sensorApi.getAlertSettings();
+            } catch (error) {
+                console.error('获取警报设置失败，使用默认设置:', error);
+                alertSettings = { soundAlert: true, vibrationAlert: true };
+            }
+            
+            // 距离过近，触发警报
+            if (distance <= threshold) {
+                // 如果警报未激活，则激活警报
+                if (!isAlertActive) {
+                    isAlertActive = true;
+                    
+                    // 改变卡片样式
+                    distanceCard.classList.remove('card-shadow');
+                    distanceCard.classList.add('card-shadow-alert', 'animate-alert');
+                    distanceCard.classList.add('bg-red-50');
+                    
+                    // 改变图标样式
+                    distanceIconContainer.classList.remove('bg-purple-100', 'text-accent');
+                    distanceIconContainer.classList.add('bg-red-100', 'text-danger');
+                    
+                    // 改变数值颜色
+                    distanceValue.classList.add('text-danger');
+                    
+                    // 显示警报图标和消息
+                    distanceAlertIcon.classList.remove('hidden');
+                    distanceAlertMessage.classList.remove('hidden');
+                    distanceAlertIndicator.classList.remove('hidden');
+                    
+                    // 更新状态
+                    distanceStatus.innerHTML = `
+                        <span class="text-danger mr-2">警报</span>
+                        <i class="fa fa-exclamation-circle text-danger"></i>
+                    `;
+                    distanceStatusIcon.classList.remove('text-accent');
+                    distanceStatusIcon.classList.add('text-danger');
+                    
+                    // 改变图表颜色
+                    distanceChart.data.datasets[0].borderColor = '#F53F3F';
+                    distanceChart.data.datasets[0].backgroundColor = 'rgba(245, 63, 63, 0.1)';
+                    distanceChart.update();
+                    
+                    // 播放警报声音（如果启用）
+                    if (alertSettings.soundAlert) {
+                        alertSound.currentTime = 0;
+                        alertSound.play().catch(e => console.log("无法播放警报声音:", e));
+                    }
+                    
+                    // 触发震动（如果启用且设备支持）
+                    if (alertSettings.vibrationAlert && 'vibrate' in navigator) {
+                        navigator.vibrate([200, 100, 200]);
+                    }
+                    
+                    // 添加警报日志
+                    addToLog('激光测距警报：距离过近');
+                }
+            } 
+            // 距离正常，解除警报
+            else {
+                // 如果警报已激活，则解除警报
+                if (isAlertActive) {
+                    isAlertActive = false;
+                    
+                    // 恢复卡片样式
+                    distanceCard.classList.add('card-shadow');
+                    distanceCard.classList.remove('card-shadow-alert', 'animate-alert', 'bg-red-50');
+                    
+                    // 恢复图标样式
+                    distanceIconContainer.classList.add('bg-purple-100', 'text-accent');
+                    distanceIconContainer.classList.remove('bg-red-100', 'text-danger');
+                    
+                    // 恢复数值颜色
+                    distanceValue.classList.remove('text-danger');
+                    
+                    // 隐藏警报图标和消息
+                    distanceAlertIcon.classList.add('hidden');
+                    distanceAlertMessage.classList.add('hidden');
+                    distanceAlertIndicator.classList.add('hidden');
+                    
+                    // 恢复状态
+                    distanceStatus.innerHTML = `
+                        <span class="text-green-500 mr-2">正常</span>
+                        <i class="fa fa-check-circle text-green-500"></i>
+                    `;
+                    distanceStatusIcon.classList.add('text-accent');
+                    distanceStatusIcon.classList.remove('text-danger');
+                    
+                    // 恢复图表颜色
+                    distanceChart.data.datasets[0].borderColor = '#722ED1';
+                    distanceChart.data.datasets[0].backgroundColor = 'rgba(114, 46, 209, 0.1)';
+                    distanceChart.update();
+                    
+                    // 停止警报声音
+                    alertSound.pause();
+                    
+                    // 停止震动
+                    if ('vibrate' in navigator) {
+                        navigator.vibrate(0);
+                    }
+                    
+                    // 添加警报解除日志
+                    addToLog('激光测距警报解除');
+                }
+            }
+        }
+        
+        // 添加日志条目
+        function addToLog(message) {
+            const logContainer = document.getElementById('update-log');
+            const logEntry = document.createElement('div');
+            logEntry.className = 'text-sm text-gray-500 flex justify-between';
+            logEntry.innerHTML = `
+                <span>${message}</span>
+                <span>刚刚</span>
+            `;
+            logContainer.insertBefore(logEntry, logContainer.firstChild);
+            
+            // 限制日志数量
+            if (logContainer.children.length > 8) {
+                logContainer.removeChild(logContainer.lastChild);
+            }
+        }
+        
+        // 地图相关功能
+        function initMapPage() {
+            console.log('开始初始化地图页面功能...');
+            
+            // 查看地图按钮点击事件
+            const viewMapBtn = document.getElementById('view-map-btn');
+            console.log('查找查看地图按钮:', viewMapBtn);
+            
+            if (viewMapBtn) {
+                console.log('地图按钮已找到，绑定点击事件');
+                viewMapBtn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    console.log('查看地图按钮被点击');
+                    
+                    const mapPage = document.getElementById('map-page');
+                    console.log('查找地图页面:', mapPage);
+                    
+                    if (mapPage) {
+                        console.log('地图页面已找到，开始跳转');
+                        console.log('当前页面状态:', mapPage.classList.toString());
+                        
+                        hideAllPages();
+                        console.log('所有页面已隐藏');
+                        
+                        showPage(mapPage);
+                        console.log('地图页面已显示');
+                        
+                        updateLocationInfo();
+                        console.log('位置信息已更新');
+                    } else {
+                        console.error('地图页面未找到');
+                    }
+                });
+            } else {
+                console.error('查看地图按钮未找到');
+                // 尝试其他选择器
+                const altBtn = document.querySelector('button[class*="text-primary"]');
+                console.log('尝试查找替代按钮:', altBtn);
+            }
+
+            // 返回按钮点击事件
+            const backBtn = document.getElementById('back-to-dashboard');
+            if (backBtn) {
+                backBtn.addEventListener('click', () => {
+                    const dashboardPage = document.getElementById('dashboard-page');
+                    if (dashboardPage) {
+                        showPage(dashboardPage);
+                    }
+                });
+            }
+
+            // 刷新位置按钮点击事件
+            const refreshBtn = document.getElementById('refresh-location');
+            if (refreshBtn) {
+                refreshBtn.addEventListener('click', () => {
+                    refreshLocation();
+                });
+            }
+
+            // 打开高德地图按钮点击事件
+            const openAmapBtn = document.getElementById('open-amap-btn');
+            if (openAmapBtn) {
+                openAmapBtn.addEventListener('click', () => {
+                    openAmapLocation();
+                });
+            }
+        }
+        
+        // 更新前端显示的数据
+        function updateSensorDisplay() {
+            // 直接从dataManager获取数据
+            const data = window.dataManager.getSensorData();
+            console.log('更新传感器显示:', data);
+
+            // 更新前端显示的数据
+            if (data.location) {
+                document.querySelector('.longitude-value').textContent = data.location.longitude.toFixed(6);
+                document.querySelector('.latitude-value').textContent = data.location.latitude.toFixed(6);
+            }
+
+            if (data.distance) {
+                document.querySelector('.distance-value').textContent = data.distance.value.toFixed(1);
+            }
+
+            if (data.temperature) {
+                document.querySelector('.temperature-value').textContent = data.temperature.value.toFixed(1);
+            }
+
+            if (data.humidity) {
+                document.querySelector('.humidity-value').textContent = data.humidity.value;
+            }
+
+            // 更新图表
+            updateChartsWithData(data);
+
+            // 添加到日志
+            addToLog('测试数据更新');
+
+            // 更新时间
+            const now = new Date();
+            const timeString = now.toLocaleTimeString();
+            document.getElementById('update-time').textContent = `更新于: ${timeString}`;
+        }
+
+        // 使用测试数据更新图表
+        function updateChartsWithData(data) {
+            if (data.temperature && charts.tempChart) {
+                const newTempData = [...charts.tempChart.data.datasets[0].data.slice(1), data.temperature.value];
+                charts.tempChart.data.datasets[0].data = newTempData;
+                charts.tempChart.update();
+            }
+
+            if (data.humidity && charts.humidityChart) {
+                const newHumidityData = [...charts.humidityChart.data.datasets[0].data.slice(1), data.humidity.value];
+                charts.humidityChart.data.datasets[0].data = newHumidityData;
+                charts.humidityChart.update();
+            }
+
+            if (data.distance && charts.distanceChart) {
+                const newDistanceData = [...charts.distanceChart.data.datasets[0].data.slice(1), data.distance.value];
+                charts.distanceChart.data.datasets[0].data = newDistanceData;
+                charts.distanceChart.update();
+
+                // 检查距离警报
+                const currentThreshold = document.getElementById('distance-threshold').dataset.newValue
+                    ? parseFloat(document.getElementById('distance-threshold').dataset.newValue)
+                    : parseFloat(document.getElementById('distance-threshold').value);
+                checkDistanceAlert(data.distance.value, currentThreshold);
+            }
+        }
+
+        // 从测试数据获取数据并更新显示
+        function updateFromTestData() {
+            // 直接从dataManager获取数据
+            const data = window.dataManager.getSensorData();
+            console.log('从测试数据更新显示:', data);
+
+            // 更新前端显示的数据
+            if (data.location) {
+                document.querySelector('.longitude-value').textContent = data.location.longitude.toFixed(6);
+                document.querySelector('.latitude-value').textContent = data.location.latitude.toFixed(6);
+            }
+
+            if (data.distance) {
+                document.querySelector('.distance-value').textContent = data.distance.value.toFixed(1);
+            }
+
+            if (data.temperature) {
+                document.querySelector('.temperature-value').textContent = data.temperature.value.toFixed(1);
+            }
+
+            if (data.humidity) {
+                document.querySelector('.humidity-value').textContent = data.humidity.value;
+            }
+
+            // 更新图表
+            updateChartsWithData(data);
+
+            // 添加到日志
+            addToLog('从测试数据更新');
+
+            // 更新时间
+            const now = new Date();
+            const timeString = now.toLocaleTimeString();
+            document.getElementById('update-time').textContent = `更新于: ${timeString}`;
+        }
+
+        // 页面加载完成后初始化
+        document.addEventListener('DOMContentLoaded', () => {
+            init();
+            initMapPage(); // 初始化地图页面功能
+            updateSensorDisplay(); // 更新传感器显示
+            
+            // 移除自动更新功能，数据由终端传输进来
+        });
+        
+        // 加载警报设置
+        async function loadAlertSettings() {
+            try {
+                const settings = await window.sensorApi.getAlertSettings();
+                console.log('加载警报设置:', settings);
+                
+                // 应用设置到UI
+                if (settings.soundAlert !== undefined) {
+                    document.getElementById('sound-alert-toggle').checked = settings.soundAlert;
+                }
+                
+                // 查找震动警报开关
+                const vibrationAlertToggle = document.getElementById('vibration-alert-toggle');
+                if (vibrationAlertToggle && settings.vibrationAlert !== undefined) {
+                    vibrationAlertToggle.checked = settings.vibrationAlert;
+                }
+            } catch (error) {
+                console.error('加载警报设置失败:', error);
+            }
+        }
+        
+        // 保存警报设置
+        async function saveAlertSettings() {
+            try {
+                // 查找震动警报开关
+                const vibrationAlertToggle = document.getElementById('vibration-alert-toggle');
+                
+                const settings = {
+                    soundAlert: document.getElementById('sound-alert-toggle').checked,
+                    vibrationAlert: vibrationAlertToggle ? vibrationAlertToggle.checked : true
+                };
+                
+                console.log('准备保存的警报设置:', settings);
+                
+                const result = await window.sensorApi.updateAlertSettings(settings);
+                console.log('保存警报设置结果:', result);
+                
+                // 显示保存成功提示
+                showNotification('警报设置已保存', 'success');
+            } catch (error) {
+                console.error('保存警报设置失败:', error);
+                console.error('错误详情:', error.message);
+                showNotification(`保存警报设置失败: ${error.message}`, 'error');
+            }
+        }
+        
+        // 显示通知
+        function showNotification(message, type = 'info') {
+            // 创建通知元素
+            const notification = document.createElement('div');
+            notification.className = `fixed top-20 right-4 px-4 py-2 rounded-lg shadow-lg z-50 transition-all duration-300 transform translate-x-full`;
+            
+            // 根据类型设置样式
+            switch(type) {
+                case 'success':
+                    notification.classList.add('bg-green-500', 'text-white');
+                    break;
+                case 'error':
+                    notification.classList.add('bg-red-500', 'text-white');
+                    break;
+                default:
+                    notification.classList.add('bg-blue-500', 'text-white');
+            }
+            
+            notification.textContent = message;
+            document.body.appendChild(notification);
+            
+            // 显示通知
+            setTimeout(() => {
+                notification.classList.remove('translate-x-full');
+            }, 10);
+            
+            // 3秒后隐藏通知
+            setTimeout(() => {
+                notification.classList.add('translate-x-full');
+                setTimeout(() => {
+                    document.body.removeChild(notification);
+                }, 300);
+            }, 3000);
+        }
+        
+        // 初始化警报设置事件监听
+        function initAlertSettingsListeners() {
+            // 声音警报开关
+            const soundAlertToggle = document.getElementById('sound-alert-toggle');
+            soundAlertToggle.addEventListener('change', () => {
+                saveAlertSettings();
+            });
+            
+            // 震动警报开关
+            const vibrationAlertToggle = document.getElementById('vibration-alert-toggle');
+            if (vibrationAlertToggle) {
+                vibrationAlertToggle.addEventListener('change', () => {
+                    saveAlertSettings();
+                });
+            }
+        }
+        
+        // 在页面加载完成后初始化警报设置
+        document.addEventListener('DOMContentLoaded', () => {
+            // 检查sensorApi是否正确加载
+            if (typeof window.sensorApi === 'undefined') {
+                console.error('sensorApi未正确加载');
+                return;
+            }
+            
+            // 检查updateAlertSettings方法是否存在
+            if (typeof window.sensorApi.updateAlertSettings !== 'function') {
+                console.error('updateAlertSettings方法不存在');
+                return;
+            }
+            
+            // 加载警报设置
+            loadAlertSettings();
+            
+            // 初始化警报设置事件监听
+            initAlertSettingsListeners();
+        });
+    </script>
+</body>
+</html>
